@@ -95,24 +95,61 @@ The code is intentionally separated so the core logic can be ported to Arduino:
 
 ---
 
-## Arduino port (planned)
+## Arduino sketch (`arduino/tekken_mini/`)
 
-Target hardware:
+Full port of the simulation to the Adafruit Metro RP2040 with a 1.8" ST7735R TFT display.
 
-- Arduino Mega or ESP32
-- ILI9341 or ST7735 TFT display
-- 2× analog joystick modules
-- Push buttons for attacks and block
-- Optional: piezo buzzer or DFPlayer Mini for audio
-- Optional: RGB LEDs for hit feedback
+### Hardware
 
-Porting path:
+| Component | Details |
+|-----------|---------|
+| MCU | Adafruit Metro RP2040 |
+| Display | ST7735R 1.8" TFT (128×160, landscape → 160×128) |
+| Controls | 2× analog joystick (X/Y + SEL) + 3 buttons per player |
+| Feedback | Shared LED (pin 4) + PWM audio via PAM8302 amp |
 
-1. Replace `input_handler.py` with `digitalRead()` / `analogRead()` calls
-2. Replace `renderer.py` with TFT library draw calls at the same resolution
-3. Convert `Player` class to a C struct with equivalent update functions
-4. Replace float timers with `millis()` delta counters
-5. Replace `pygame.Rect.colliderect` with a manual AABB check
+### Pin map
+
+| Signal | Pin |
+|--------|-----|
+| TFT CS / DC | 8 / 10 |
+| TFT RST | — (tie to 3.3V) |
+| P1 Joystick X / Y | A0 / A1 |
+| P1 Joystick SEL | 2 |
+| P1 Light / Heavy / Block | 6 / 7 / 12 |
+| P2 Joystick X / Y | A2 / A3 |
+| P2 Joystick SEL | 3 |
+| P2 Light / Heavy / Block | 13 / 24 / 25 |
+| LED | 4 |
+| Audio PWM | **5** ← spec said 13 but that conflicts with P2 Light btn |
+
+> **Pin 13 conflict:** original spec placed P2 Light attack and audio PWM on the same pin. The sketch moves audio to pin **5**. Update `PIN_AUDIO` in the sketch if you rewire.
+
+### Libraries (Arduino Library Manager)
+
+- `Adafruit ST7735 and ST7789 Library`
+- `Adafruit GFX Library`
+
+### How to compile
+
+1. Install **Arduino IDE 2.x**
+2. **Boards Manager** → search `Raspberry Pi RP2040` → install Earle Philhower core
+3. Select **Adafruit Metro RP2040**
+4. Open `arduino/tekken_mini/tekken_mini.ino` and upload
+
+### Python → Arduino mapping
+
+| Python / Pygame | Arduino sketch |
+|-----------------|---------------|
+| `Player` class | `Player` struct + free functions |
+| `float` positions | `float` (RP2040 has FPU; use `int16_t` on AVR) |
+| `pygame.time.Clock()` / `dt` | `millis()` deltas + absolute deadline timestamps |
+| `pygame.key.get_pressed()` | `analogRead()` + `digitalRead()` in `read_input()` |
+| `pygame.Rect.colliderect()` | `rects_overlap()` with `Rect16` structs |
+| `pygame.draw.rect()` | `tft.fillRect()` + partial-erase to avoid flicker |
+| `pygame.mixer` sound hooks | `tone()` on PIN_AUDIO |
+| State strings | `GameState` typedef enum |
+| Cooldown floats | Absolute `millis()` deadline `uint32_t` fields |
 
 ---
 
